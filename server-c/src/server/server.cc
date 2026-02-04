@@ -58,28 +58,14 @@ void Server::StartListening(int port)  {
     }
 
     Request* request = new Request();
-    request->Deserialize(in_.data());
+    Response* response = new Response();
 
+    request->Deserialize(in_.data());
     char client_ip[INET_ADDRSTRLEN];
     inet_ntop(AF_INET, &client_addr.sin_addr, client_ip, sizeof(client_ip));
     controller_.ReceiveRpcRequest(std::string(client_ip), *request);
-
-    Response* response = new Response();
-
-    int indicator = Filter(request, response, client_addr, client_addr_len);
-    if (indicator == 0) { // not a duplicated request
-      Dispatch(request, response, client_addr, client_addr_len);
-    }
-    response->Serialize(out_.data());
-    controller_.PostRpcResponse(std::string(client_ip), *response);
-    if (indicator < 0) { // dup, at least once
-      delete response;
-      response = nullptr;
-    } else if (indicator > 0) { // dup, at most once
-      response = nullptr;
-    } else { // the corresponding response should be recorded
-      responses_[request->GetId()] = response;
-    }
+    
+    Filter(request, response, client_addr, client_addr_len); // after this, response should be serialized to out
 
     int send_seed = GenRandomValue(1, 100);
     if (send_seed < intv_start_ || send_seed > intv_end_) {
@@ -106,34 +92,38 @@ void Server::ChangeLostRate(int i) {
   intv_start_ = i;
 }
 
-int Server::Filter(Request* request, Response* response, const sockaddr_in& client_addr, socklen_t len) {
-  auto iter = requests_.find(request->GetId());
-  if (iter != requests_.end()) { // duplicated request
-    switch (mode_) {
-      case mode::at_least_once: {
-        // perform request again, but do not record them in history
-        Dispatch(request, response, client_addr, len);
+void Server::Filter(Request* request, Response* response, const sockaddr_in& client_addr, socklen_t len) {
+  switch (mode_) {
+    case mode::at_least_once: {
+      // perform request again, but do not record them in history
+      Dispatch(request, response, client_addr, len);
+      response->Serialize(out_.data());
+      delete request;
+      delete response;
+      request = nullptr;
+      response = nullptr;
+      return;
+    }
+    case mode::at_most_once: {
+      auto iter = requests_.find(request->GetId());
+      if (iter != requests_.end()) { // duplicated request
+        // return previous response outcome to the client
+        auto iter_resp = responses_.find(request->GetId());
+        response = iter_resp->second;
+        response->Serialize(out_.data());
+        response = nullptr;
         delete request;
         request = nullptr;
-        return -1;
+      } else {
+        Dispatch(request, response, client_addr, len);
+        requests_[request->GetId()] = request;
+        responses_[request->GetId()] = response;
+        response->Serialize(out_.data());
       }
-      case mode::at_most_once: {
-        // create a temporary message to receiver to indicate that there is a duplicated request
-        std::unique_ptr<Response> dup_msg = std::make_unique<Response>();
-        SetResponse(*dup_msg, request->GetId(), status_code::error, "duplicated operation, previous outcome: ");
-        dup_msg->Serialize(out_.data());
-        ssize_t sent = sendto(sockfd_, out_.data(), sizeof(out_), 0, (sockaddr*)(&client_addr), len);
-        if (sent < 0) { perror("sendto"); }
-        memset(out_.data(), 0, out_buf_len);
-        // return previous response outcome to the client
-        auto iter = responses_.find(request->GetId());
-        response = iter->second;
-        return 1;
-      } // ignore
-      default: break;
-    }
+      return;
+    } // ignore
+    default: return;
   }
-  return 0;
 }
 
 void Server::Dispatch(Request* request, Response* response, const sockaddr_in& client_addr, socklen_t len) {
@@ -271,8 +261,8 @@ void Server::HandleDeposit(const Request& request, Response& response) {
     float curr_bal = iter->second->GetBalance(cur_unit);
     controller_.Deposit(*iter->second);
     controller_.WriteToConsole("deposit success: " + iter->second->ToString());
-    SetResponse(response, request.GetId(), 
-      status_code::success, "deposit success");
+    SetResponse(response, request.GetId(), status_code::success, 
+      "deposit success, current balance of " + currency_to_str(cur_unit) + " is: " + std::to_string(curr_bal));
     InvokeCallback(
       "successful deposit " + std::to_string(amount) + currency_to_str(cur_unit) + " to account with id: " + std::to_string(id));
   }
@@ -305,8 +295,8 @@ void Server::HandleWithdraw(const Request& request, Response& response) {
       float curr_bal = iter->second->GetBalance(cur_unit);
       controller_.Withdraw(*iter->second);
       controller_.WriteToConsole("withdraw success: " + iter->second->ToString());
-      SetResponse(response, request.GetId(), 
-        status_code::success, "withdraw success");
+      SetResponse(response, request.GetId(), status_code::success, 
+        "withdraw success, current balance of " + currency_to_str(cur_unit) + " is: " + std::to_string(curr_bal));
       InvokeCallback(
         "successful withdraw " + std::to_string(amount) + currency_to_str(cur_unit) + " from account with id: " + std::to_string(id));
     }

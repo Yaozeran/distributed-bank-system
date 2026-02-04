@@ -135,7 +135,7 @@ class Server
 
   void ChangeLostRate(int i);
 
-  int Filter(Request* request, Response* response, const sockaddr_in& client_addr, socklen_t len);
+  void Filter(Request* request, Response* response, const sockaddr_in& client_addr, socklen_t len);
 
   int GenRandomValue(int min, int max);
 

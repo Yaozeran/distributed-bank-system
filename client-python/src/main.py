@@ -38,12 +38,16 @@ def send_and_show(sock, server_addr: tuple, request_id: int, op_code: int, conte
     # 3. Retry loop
     for attempt in range(MAX_RETRIES):
         # try to send 
-        reply = udp_client.send_request(sock, server_addr, req)
+        reply = udp_client.request_reply(sock, server_addr, req)
+        # reply = udp_client.send_request(sock, server_addr, req) # use for duplicated request test
         if reply is not None:
             break
+        print(f"Timeout, retrying... ({attempt + 1}/{MAX_RETRIES})")
+    # after the loop
     if reply is None:
         print("Error: No reply from server (timeout).")
         return request_id + 1
+    # this time, reply is supposed to be not none
     try:
         _resp_id, status, msg = protocol.unpack_response(reply)
     except Exception as e:
@@ -57,6 +61,7 @@ def send_and_show(sock, server_addr: tuple, request_id: int, op_code: int, conte
         print("Error:", msg)
     else:
         print("Response:", msg)
+
     return request_id + 1
 
 
