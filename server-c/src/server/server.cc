@@ -111,6 +111,9 @@ void Server::Filter(Request* request, Response* response, const sockaddr_in& cli
         auto iter_resp = responses_.find(request->GetId());
         response = iter_resp->second;
         response->Serialize(out_.data());
+        char client_ip[INET_ADDRSTRLEN];
+        inet_ntop(AF_INET, &client_addr.sin_addr, client_ip, sizeof(client_ip));
+        controller_.PostRpcResponse(std::string(client_ip), *response);
         response = nullptr;
         delete request;
         request = nullptr;
@@ -119,6 +122,9 @@ void Server::Filter(Request* request, Response* response, const sockaddr_in& cli
         requests_[request->GetId()] = request;
         responses_[request->GetId()] = response;
         response->Serialize(out_.data());
+        char client_ip[INET_ADDRSTRLEN];
+        inet_ntop(AF_INET, &client_addr.sin_addr, client_ip, sizeof(client_ip));
+        controller_.PostRpcResponse(std::string(client_ip), *response);
       }
       return;
     } // ignore
