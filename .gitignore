@@ -1,0 +1,21 @@
+test
+
+# cpp
+build
+
+# java
+
+
+# python
+pythonenv/
+__pycache__
+
+# other file format
+*.pdf
+*.docx
+
+# macos
+.DS_Store
+
+# vscode
+.vscode
