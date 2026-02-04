@@ -107,18 +107,13 @@ void Server::Filter(Request* request, Response* response, const sockaddr_in& cli
     case mode::at_most_once: {
       auto iter = requests_.find(request->GetId());
       if (iter != requests_.end()) { // duplicated request
-        // create a temporary message to receiver to indicate that there is a duplicated request
-        std::unique_ptr<Response> dup_msg = std::make_unique<Response>();
-        SetResponse(*dup_msg, request->GetId(), status_code::error, "duplicated operation, previous outcome: ");
-        dup_msg->Serialize(out_.data());
-        ssize_t sent = sendto(sockfd_, out_.data(), sizeof(out_), 0, (sockaddr*)(&client_addr), len);
-        if (sent < 0) { perror("sendto"); }
-        memset(out_.data(), 0, out_buf_len);
         // return previous response outcome to the client
-        auto iter = responses_.find(request->GetId());
-        response = iter->second;
+        auto iter_resp = responses_.find(request->GetId());
+        response = iter_resp->second;
         response->Serialize(out_.data());
         response = nullptr;
+        delete request;
+        request = nullptr;
       } else {
         Dispatch(request, response, client_addr, len);
         requests_[request->GetId()] = request;
