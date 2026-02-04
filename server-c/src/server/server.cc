@@ -98,6 +98,9 @@ void Server::Filter(Request* request, Response* response, const sockaddr_in& cli
       // perform request again, but do not record them in history
       Dispatch(request, response, client_addr, len);
       response->Serialize(out_.data());
+      char client_ip[INET_ADDRSTRLEN];
+      inet_ntop(AF_INET, &client_addr.sin_addr, client_ip, sizeof(client_ip));
+      controller_.PostRpcResponse(std::string(client_ip), *response);
       delete request;
       delete response;
       request = nullptr;
